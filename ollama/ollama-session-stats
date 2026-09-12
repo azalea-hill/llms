@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+import re
+import sys
+from datetime import datetime
+
+path = sys.argv[1] if len(sys.argv) > 1 else f"{__import__('os').environ['HOME']}/.ollama/logs/server.log"
+since = sys.argv[2] if len(sys.argv) > 2 else None
+
+lines = open(path).read().splitlines()
+ts_re = re.compile(r'^time=(\S+)')
+
+def ts(l):
+    m = ts_re.match(l)
+    return datetime.fromisoformat(m.group(1)) if m else None
+
+def dur(s):
+    return sum(float(v) * {"ms": 0.001, "s": 1, "m": 60}[u] for v, u in re.findall(r'([\d.]+)(ms|m|s)', s))
+
+sessions = []
+cur = None
+req = None
+free_mem = None
+
+def close():
+    global req
+    if req and cur is not None and req.get("took") is not None:
+        cur["reqs"].append(req)
+    req = None
+
+for l in lines:
+    t = ts(l)
+    if since and t and t.strftime("%H:%M") < since:
+        continue
+    if 'msg="system memory"' in l:
+        free_mem = re.search(r'free="([\d.]+) GiB"', l).group(1)
+        continue
+    if 'starting mlx runner subprocess' in l or 'starting llama-server' in l:
+        close()
+        m = re.search(r'model=(\S+)', l)
+        cur = {"model": m.group(1) if m else "llama-server", "start": t, "reqs": [], "peak": 0, "free": free_mem}
+        sessions.append(cur)
+        continue
+    if cur is None:
+        continue
+    if 'msg="cache miss"' in l or 'msg="cache hit"' in l:
+        close()
+        m = re.search(r'total=(\d+) matched=(\d+) cached=(\d+) left=(\d+)', l)
+        req = {"t0": t, "total": int(m.group(1)), "matched": int(m.group(2)), "left": int(m.group(4)), "pp_end": None, "gen": 0, "took": None, "acc": 0.0, "t1": None}
+        continue
+    if req is None:
+        continue
+    if 'Prompt processing progress' in l:
+        m = re.search(r'processed=(\d+) total=(\d+)', l)
+        if int(m.group(1)) + 1 >= int(m.group(2)):
+            req["pp_end"] = t
+    elif 'speculative decode stats' in l:
+        m = re.search(r'iterations=(\d+) drafted=(\d+) accepted=(\d+) acceptance=([\d.]+)', l)
+        req["gen"] = int(m.group(1)) + int(m.group(3))
+        req["acc"] = float(m.group(4))
+    elif 'ServeHTTP method=POST path=/v1/completions' in l:
+        req["took"] = dur(re.search(r'took=(\S+)', l).group(1))
+        req["t1"] = t
+    elif 'msg="peak memory"' in l:
+        cur["peak"] = max(cur["peak"], float(re.search(r'size="([\d.]+) GiB"', l).group(1)))
+close()
+
+for s in sessions:
+    reqs = s["reqs"]
+    head = f"== {s['model']}  loaded {s['start'].strftime('%H:%M:%S')}  free-at-load={s['free']} GiB"
+    if not reqs:
+        print(f"\n{head}  no requests")
+        continue
+    first = reqs[0]
+    wall = (reqs[-1]["t1"] - first["t0"]).total_seconds()
+    tot_pre = sum(r["left"] for r in reqs)
+    tot_gen = sum(r["gen"] for r in reqs)
+    tot_took = sum(r["took"] for r in reqs)
+    print(f"\n{head}")
+    print(f"   turns={len(reqs)}  wall={wall:.0f}s  model-time={tot_took:.0f}s  peak={s['peak']:.1f} GiB  prefilled={tot_pre}  generated~={tot_gen}  final-context={reqs[-1]['total']}")
+    pp = (first["pp_end"] - first["t0"]).total_seconds() if first["pp_end"] else None
+    if pp:
+        print(f"   first turn: prompt={first['total']}  prefill={pp:.1f}s ({first['total']/pp:.0f} tok/s)")
+    print(f"   {'turn':>4} {'ctx':>6} {'cached':>6} {'new':>6} {'gen':>5} {'took':>6} {'dec/s':>6} {'acc':>4}")
+    for i, r in enumerate(reqs, 1):
+        pp = (r["pp_end"] - r["t0"]).total_seconds() if r["pp_end"] else 0
+        rate = r["gen"] / max(r["took"] - pp, 0.01) if r["gen"] else 0
+        print(f"   {i:>4} {r['total']:>6} {r['matched']:>6} {r['left']:>6} {r['gen']:>5} {r['took']:>6.1f} {rate:>6.0f} {r['acc']:>4.2f}")

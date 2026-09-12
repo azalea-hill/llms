@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+import glob
+import json
+import os
+import re
+import sys
+from collections import Counter
+from datetime import datetime
+
+args = [a for a in sys.argv[1:]]
+since = next((a for a in args if re.fullmatch(r"\d\d:\d\d", a)), None)
+session = next((a for a in args if re.fullmatch(r"[0-9a-f-]{36}", a)), None)
+logs = sorted(glob.glob(os.path.expanduser("~/.lmstudio/server-logs/*/*.log")), key=os.path.getmtime)
+path = next((a for a in args if a.endswith(".log")), logs[-1] if logs else None)
+if not path:
+    sys.exit("no LM Studio server log found")
+
+line_re = re.compile(r"^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\]\[(\w+)\](?:\[([^\]]*)\])?\s*(.*)$")
+sessions = []
+cur = None
+req = None
+
+def close():
+    global req
+    if req and cur is not None:
+        cur["reqs"].append(req)
+    req = None
+
+for l in open(path, errors="replace"):
+    m = line_re.match(l)
+    if not m:
+        continue
+    t = datetime.fromisoformat(m.group(1))
+    if since and t.strftime("%H:%M") < since:
+        continue
+    src, msg = m.group(3) or "", m.group(4)
+    if src == "LMSAuthenticator" and "Loading model:" in msg:
+        model = msg.split("Loading model:")[1].strip()
+        close()
+        cur = next((s for s in sessions if s["model"] == model), None)
+        if cur is None or cur["reqs"]:
+            cur = {"model": model, "start": t, "reqs": []}
+            sessions.append(cur)
+        continue
+    if "Running Anthropic messages API on conversation with" in msg:
+        close()
+        model = src
+        cur = next((s for s in sessions if s["model"] == model), None)
+        if cur is None:
+            cur = {"model": model, "start": t, "reqs": []}
+            sessions.append(cur)
+        req = {"t0": t, "messages": int(re.search(r"with (\d+) messages", msg).group(1)), "cached": None, "uncached": None, "pp_end": None, "t1": None}
+        continue
+    if req is None:
+        continue
+    if src == "coordinator" and "Prompt cache restore" in msg:
+        mm = re.search(r"cached_tokens=(\d+) uncached_tokens=(\d+)", msg)
+        req["cached"], req["uncached"] = int(mm.group(1)), int(mm.group(2))
+    elif "Prompt processing progress: 100.0%" in msg:
+        req["pp_end"] = t
+    elif "Finished streaming Anthropic response" in msg and src == cur["model"]:
+        req["t1"] = t
+        close()
+close()
+
+outputs = []
+if session:
+    proj = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{session}.jsonl"))
+    if proj:
+        for l in open(proj[0]):
+            try:
+                r = json.loads(l)
+            except json.JSONDecodeError:
+                continue
+            if r.get("type") == "assistant":
+                m = r.get("message") or {}
+                u = m.get("usage") or {}
+                if u.get("output_tokens"):
+                    outputs.append((m.get("id"), u["output_tokens"]))
+    by_msg = {}
+    for mid, n in outputs:
+        by_msg.setdefault(mid, n)
+    outputs = list(by_msg.values())
+
+for s in sessions:
+    reqs = [r for r in s["reqs"] if r["t1"]]
+    if not reqs:
+        continue
+    wall = (reqs[-1]["t1"] - reqs[0]["t0"]).total_seconds()
+    tot_un = sum(r["uncached"] or 0 for r in reqs)
+    print(f"\n== {s['model']}  first request {reqs[0]['t0'].strftime('%H:%M:%S')}  turns={len(reqs)}  wall={wall:.0f}s  prefilled={tot_un}  final-context={(reqs[-1]['cached'] or 0) + (reqs[-1]['uncached'] or 0)}")
+    first = reqs[0]
+    if first["pp_end"] and first["uncached"]:
+        pp = (first["pp_end"] - first["t0"]).total_seconds()
+        print(f"   first turn: prompt={first['uncached']}  prefill={pp:.1f}s ({first['uncached']/max(pp,0.1):.0f} tok/s)")
+    print(f"   {'turn':>4} {'msgs':>4} {'ctx':>6} {'cached':>6} {'new':>6} {'prefill':>7} {'total':>6} {'out':>5} {'dec/s':>6}")
+    for i, r in enumerate(reqs):
+        ctx = (r["cached"] or 0) + (r["uncached"] or 0)
+        pp = (r["pp_end"] - r["t0"]).total_seconds() if r["pp_end"] else 0
+        total = (r["t1"] - r["t0"]).total_seconds()
+        out = outputs[i] if i < len(outputs) else None
+        dec = f"{out/max(total-pp,0.1):.0f}" if out else "-"
+        print(f"   {i+1:>4} {r['messages']:>4} {ctx:>6} {r['cached'] or 0:>6} {r['uncached'] or 0:>6} {pp:>7.1f} {total:>6.1f} {out if out else '-':>5} {dec:>6}")

@@ -1,0 +1,49 @@
+#!/bin/zsh
+set -euo pipefail
+
+upstream=${LMS_URL:-http://localhost:1234}
+health=/v1/models
+if ! curl -sf "$upstream$health" >/dev/null; then
+  echo "LM Studio is not responding at $upstream (lms server start)" >&2
+  exit 1
+fi
+
+main=${LMS_MAIN:-qwen/qwen3.6-35b-a3b}
+small=${LMS_SMALL:-ibm/granite-4-micro}
+
+export ANTHROPIC_BASE_URL=$upstream
+export ANTHROPIC_AUTH_TOKEN=lmstudio
+export ANTHROPIC_API_KEY=
+export ANTHROPIC_MODEL=opus
+export ANTHROPIC_DEFAULT_FABLE_MODEL=$main
+export ANTHROPIC_DEFAULT_OPUS_MODEL=$main
+export ANTHROPIC_DEFAULT_SONNET_MODEL=$main
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=$small
+export CLAUDE_CODE_SUBAGENT_MODEL=haiku
+export CLAUDE_CODE_TOTAL_TOKENS_REMINDER=off
+export CLAUDE_CODE_ATTRIBUTION_HEADER=0
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS=131072
+export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
+
+extra=(--strict-mcp-config)
+has_perm=0
+has_tools=0
+has_effort=0
+resuming=0
+for arg in "$@"; do
+  [[ "$arg" == --permission-mode* ]] && has_perm=1
+  [[ "$arg" == --tools* ]] && has_tools=1
+  [[ "$arg" == --effort* ]] && has_effort=1
+  [[ "$arg" == --resume* || "$arg" == -r || "$arg" == --continue || "$arg" == -c || "$arg" == --session-id* ]] && resuming=1
+done
+session=resumed
+if (( ! resuming )); then
+  session=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  extra+=(--session-id "$session")
+fi
+echo "claude-local [$upstream] session=$session main=$main haiku=$small" >&2
+(( has_perm )) || extra+=(--permission-mode acceptEdits)
+(( has_tools )) || extra+=(--tools "Bash,Read,Edit,Write,Glob,Grep,AskUserQuestion")
+(( has_effort )) || extra+=(--effort medium)
+exec claude "${extra[@]}" "$@"

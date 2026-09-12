@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+from collections import Counter
+from datetime import datetime
+
+cwd = os.path.realpath(sys.argv[1] if len(sys.argv) > 1 else os.getcwd())
+project = os.path.expanduser("~/.claude/projects/" + cwd.replace("/", "-"))
+if not os.path.isdir(project):
+    sys.exit(f"no sessions for {cwd}")
+
+rows = []
+for name in os.listdir(project):
+    if not name.endswith(".jsonl"):
+        continue
+    path = os.path.join(project, name)
+    models = Counter()
+    first = None
+    with open(path) as f:
+        for line in f:
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            msg = rec.get("message") or {}
+            if rec.get("type") == "assistant" and msg.get("model"):
+                models[msg["model"]] += 1
+            if first is None and rec.get("type") == "user":
+                content = msg.get("content")
+                if isinstance(content, list):
+                    content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
+                if isinstance(content, str) and not content.startswith("<") and content.strip():
+                    first = content.strip().replace("\n", " ")
+    if not models:
+        continue
+    rows.append((os.path.getmtime(path), name[:-6], models, first or ""))
+
+rows.sort(reverse=True)
+for mtime, sid, models, first in rows:
+    when = datetime.fromtimestamp(mtime).strftime("%m-%d %H:%M")
+    used = " ".join(f"{m}x{n}" for m, n in models.most_common())
+    print(f"{when}  {sid}  {used}")
+    if first:
+        print(f"                   {first[:100]}")
