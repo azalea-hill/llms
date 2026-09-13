@@ -8,6 +8,6 @@ main=${1:-${LMS_MAIN:-qwen/qwen3.6-35b-a3b}}
 small=${LMS_SMALL:-ibm/granite-4-micro}
 
 $lms unload --all
-$lms load "$main" --context-length 131072 --gpu max --speculative-draft-mtp
+$lms load "$main" --context-length 200000 --gpu max --speculative-draft-mtp
 $lms load "$small" --context-length 32768 --gpu max
 $lms ps
