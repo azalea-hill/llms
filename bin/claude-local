@@ -44,6 +44,6 @@ if (( ! resuming )); then
 fi
 echo "claude-local [$upstream] session=$session main=$main haiku=$small" >&2
 (( has_perm )) || extra+=(--permission-mode acceptEdits)
-(( has_tools )) || extra+=(--tools "Bash,Read,Edit,Write,Glob,Grep,AskUserQuestion")
+(( has_tools )) || extra+=(--tools "Bash,Read,Edit,Write,Glob,Grep,AskUserQuestion,TodoWrite,TaskCreate,TaskGet,TaskList,TaskUpdate,EnterPlanMode,ExitPlanMode")
 (( has_effort )) || extra+=(--effort medium)
 exec claude "${extra[@]}" "$@"
