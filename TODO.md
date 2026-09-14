@@ -1,4 +1,4 @@
-# TODO
+# Shared backlog
 
 ## Model research
 
@@ -8,43 +8,30 @@ Benchmark viable model sets for:
 - **M5 Ultra, 256 GB**
 - **M5 Ultra, 512 GB**
 
-Current pair (Qwen 35B + Gemma 26B, ~35 GB loaded) is tuned for 48 GB. What model combinations make sense at higher memory ceilings? Consider dense, MoE, and MLX-quantized variants. Target: 200K context per model, cache-friendly loading strategy.
+The current Claude set is tuned for smaller machines. Determine which model
+combinations make sense at higher memory ceilings for both Claude Code and
+Codex. Consider dense, mixture-of-experts, and MLX-quantized variants. Target a
+200K context per primary model and a cache-friendly loading strategy.
 
-## Web search
+## Shared model configuration
 
-Claude Code's `WebSearch` tool executes via Anthropic's API and cannot be pointed elsewhere. Need a local alternative:
-
-- Build a local MCP server that handles web search (e.g., via a local search API or scraping backend)
-- Wire it into `claude-local`'s tool list so it appears as a local tool
-- Verify it works with LM Studio's Anthropic adapter
-
-Priority: medium. Useful but not blocking — the current `WebFetch` workaround (fetch + haiku summary) covers most cases.
-
-## Script error handling
-
-All scripts fail silently or with cryptic tracebacks when things go wrong:
-
-- `lms-load` doesn't check if `lms unload` or `lms load` succeeded
-- `claude-local` doesn't verify Claude Code is installed before exec'ing it
-- `lms-session-stats` and `claude-local-sessions` have no error handling on missing files
-- No usage messages or argument validation
-
-## Centralize model config
-
-`qwen/qwen3.6-35b-a3b` and `google/gemma-4-26b-a4b-qat` are hardcoded across `claude-local` and `lms-load`. If a better model comes out, you have to touch multiple files. A single source of truth (env var convention, config file, or shared script) would help.
+Model identifiers are currently embedded in multiple scripts and documents.
+Once the Codex setup exists, evaluate a small shared configuration source that
+does not couple the two launchers' provider-specific settings.
 
 ## LM Studio settings helper
 
-The README recommends changing `~/.lmstudio/settings.json` (turning off `developer/unloadPreviousJITModelOnLoad`, raising `defaultContextLength`) but there's no helper to do that. A one-liner script would save manual editing.
+The setup documentation recommends adjusting LM Studio settings such as the
+default context length and JIT-model unloading. Consider a safe helper that
+shows and validates the proposed changes before updating user-level settings.
 
 ## Model version pinning
 
-Model names are strings, not pinned versions. A better model could overwrite the same HuggingFace key and break things. Pin to specific revision hashes or use `lms get <key>@<revision>` to lock versions.
+Model names are strings rather than immutable revisions. Investigate pinning
+downloaded models to revision hashes so an upstream replacement cannot silently
+change a working setup.
 
-## Clean up or document `ollama/`
+## Restore-to-idle command
 
-Modelfiles and `ollama-session-stats` exist but aren't referenced in README or TODO. They're artifacts from the Ollama-first approach and are now dead code unless you want to keep them as reference. Either remove them or document their purpose.
-
-## No "undo" command
-
-You can `lms unload --all` but there's no "go back to defaults" or "unload all and restore to idle" command. Useful after experimenting with different models.
+There is no convenience command that unloads the model set and returns LM
+Studio to an idle state. Add one if both setups would benefit from it.
