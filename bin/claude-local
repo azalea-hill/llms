@@ -9,6 +9,7 @@ if ! curl -sf "$upstream$health" >/dev/null; then
 fi
 
 main=${LMS_MAIN:-qwen/qwen3.6-35b-a3b}
+medium=${LMS_MEDIUM:-google/gemma-4-26b-a4b-qat}
 small=${LMS_SMALL:-ibm/granite-4-micro}
 
 export ANTHROPIC_BASE_URL=$upstream
@@ -17,7 +18,7 @@ export ANTHROPIC_API_KEY=
 export ANTHROPIC_MODEL=opus
 export ANTHROPIC_DEFAULT_FABLE_MODEL=$main
 export ANTHROPIC_DEFAULT_OPUS_MODEL=$main
-export ANTHROPIC_DEFAULT_SONNET_MODEL=$main
+export ANTHROPIC_DEFAULT_SONNET_MODEL=$medium
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=$small
 export CLAUDE_CODE_SUBAGENT_MODEL=haiku
 export CLAUDE_CODE_TOTAL_TOKENS_REMINDER=off
@@ -25,8 +26,9 @@ export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000
 export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
 export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-extra=(--strict-mcp-config)
+extra=(--strict-mcp-config --settings '{"skipWebFetchPreflight":true}')
 has_perm=0
 has_tools=0
 has_effort=0
@@ -42,8 +44,8 @@ if (( ! resuming )); then
   session=$(uuidgen | tr '[:upper:]' '[:lower:]')
   extra+=(--session-id "$session")
 fi
-echo "claude-local [$upstream] session=$session main=$main haiku=$small" >&2
+echo "claude-local [$upstream] session=$session main=$main sonnet=$medium haiku=$small" >&2
 (( has_perm )) || extra+=(--permission-mode acceptEdits)
-(( has_tools )) || extra+=(--tools "Bash,Read,Edit,Write,Glob,Grep,AskUserQuestion,TodoWrite,TaskCreate,TaskGet,TaskList,TaskUpdate,EnterPlanMode,ExitPlanMode")
+(( has_tools )) || extra+=(--tools "Bash,Read,Edit,Write,Glob,Grep,WebFetch,AskUserQuestion,TodoWrite,TaskCreate,TaskGet,TaskList,TaskUpdate,EnterPlanMode,ExitPlanMode")
 (( has_effort )) || extra+=(--effort medium)
 exec claude "${extra[@]}" "$@"

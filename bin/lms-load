@@ -5,9 +5,11 @@ lms=$(command -v lms || echo "$HOME/.lmstudio/bin/lms")
 [[ -x $lms ]] || { echo "lms CLI not found; install LM Studio's CLI or add ~/.lmstudio/bin to PATH" >&2; exit 1; }
 
 main=${1:-${LMS_MAIN:-qwen/qwen3.6-35b-a3b}}
+medium=${LMS_MEDIUM:-google/gemma-4-26b-a4b-qat}
 small=${LMS_SMALL:-ibm/granite-4-micro}
 
 $lms unload --all
 $lms load "$main" --context-length 200000 --gpu max --speculative-draft-mtp
-$lms load "$small" --context-length 32768 --gpu max
+$lms load "$medium" --context-length 200000 --gpu max
+$lms load "$small" --context-length 65536 --gpu max
 $lms ps
