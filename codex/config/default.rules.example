@@ -88,3 +88,75 @@ prefix_rule(
     decision = "forbidden",
     justification = "Ask the user to perform operations that modify Git reflogs.",
 )
+
+prefix_rule(
+    pattern = [
+        "git",
+        "branch",
+        [
+            "-d",
+            "-D",
+            "-m",
+            "-M",
+            "-c",
+            "-C",
+            "-f",
+            "-u",
+            "--delete",
+            "--move",
+            "--copy",
+            "--force",
+            "--set-upstream-to",
+            "--unset-upstream",
+            "--edit-description",
+        ],
+    ],
+    decision = "forbidden",
+    justification = "Use git branch only to list branches. Ask the user to create, delete, rename, or retarget branches.",
+)
+
+prefix_rule(
+    pattern = [
+        "git",
+        "tag",
+        ["-a", "-d", "-f", "-m", "-s", "-u", "-F", "--delete", "--force"],
+    ],
+    decision = "forbidden",
+    justification = "Use git tag only to list tags. Ask the user to create or delete tags.",
+)
+
+prefix_rule(
+    pattern = ["git", ["config", "update-ref", "symbolic-ref", "bisect"]],
+    decision = "forbidden",
+    justification = "These modify repository state or refs. Ask the user to run them; read config with cat .git/config.",
+)
+
+prefix_rule(
+    pattern = [
+        "git",
+        "submodule",
+        [
+            "add",
+            "init",
+            "update",
+            "deinit",
+            "sync",
+            "set-url",
+            "set-branch",
+            "absorbgitdirs",
+            "foreach",
+        ],
+    ],
+    decision = "forbidden",
+    justification = "Use git submodule only for status. Ask the user to modify submodules.",
+)
+
+prefix_rule(
+    pattern = [
+        "git",
+        "notes",
+        ["add", "append", "copy", "edit", "merge", "prune", "remove"],
+    ],
+    decision = "forbidden",
+    justification = "Use git notes only to list or show. Ask the user to modify notes.",
+)

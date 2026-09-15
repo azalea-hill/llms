@@ -113,8 +113,8 @@ The scripts write [models/openai-models.json](models/openai-models.json) and [pr
 ## Configuration examples
 
 - [config/config.toml.example](config/config.toml.example) contains equivalent user-level defaults. Review and merge only the settings you want into `~/.codex/config.toml`; the repository does not install user configuration.
-- [config/agents.md.example](config/agents.md.example) is a snapshot of the current global `AGENTS.md` conventions.
-- [config/default.rules.example](config/default.rules.example) is a snapshot of the current global permission rules.
+- [config/agents.md.example](config/agents.md.example) is a snapshot of the current global `AGENTS.md` conventions. The live `~/.codex/AGENTS.md` is a symlink to `~/.claude/CLAUDE.md`, so this file and [claude/config/claude.md.example](../claude/config/claude.md.example) are identical.
+- [config/default.rules.example](config/default.rules.example) is a snapshot of the current global permission rules. [claude/config/settings.json.example](../claude/config/settings.json.example) carries the same rules as a Claude Code `permissions.deny` list.
 
 The `.example` suffix prevents the AGENTS and rules examples from becoming active Codex configuration when this repository is opened. Provider selection must be user-level or supplied by the launcher; Codex ignores `model_provider` in a project-local `.codex/config.toml`.
 

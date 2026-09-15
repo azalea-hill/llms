@@ -92,6 +92,13 @@ See the [model and hardware notes](../docs/models.md) for environment-variable d
 - `lms-session-stats [HH:MM] [session-id]` shows per-turn context, cached and new tokens, prefill time, and decode rate.
 - `claude-local-sessions [directory]` lists a project's sessions.
 
+## Configuration examples
+
+- [config/claude.md.example](config/claude.md.example) is a snapshot of the current global `~/.claude/CLAUDE.md` working agreements. It is the single source for both tools; `~/.codex/AGENTS.md` is a symlink to it.
+- [config/settings.json.example](config/settings.json.example) is a snapshot of the current global `~/.claude/settings.json` minus terminal cosmetics. The `permissions.deny` list mirrors the Codex [default.rules](../codex/config/default.rules.example) prefix rules, plus `EnterWorktree` and `ExitWorktree` because those native tools create git worktrees without going through Bash. `includeGitInstructions: false` drops the built-in commit and PR workflow from the system prompt, since the agent never commits.
+
+The `.example` suffix keeps these from being loaded as active configuration when this repository is opened. Review and merge only the settings you want; the repository does not install user configuration.
+
 ## Repository-local Claude settings
 
 This repository does not provide a `.claude/settings.local.json`. If you add one for this checkout, keep it at the repository root because Claude Code discovers project-local settings there when launched from this directory. Review any permissions in that file separately from the launcher configuration.
