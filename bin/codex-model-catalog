@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve a PATH symlink so repository-relative defaults still work when this
+# helper is linked into a personal bin directory.
+launcher_path=${BASH_SOURCE[0]}
+while [[ -L $launcher_path ]]; do
+  launcher_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+  launcher_path=$(readlink "$launcher_path")
+  [[ $launcher_path = /* ]] || launcher_path=$launcher_dir/$launcher_path
+done
+script_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+registry=${1:-${CODEX_LOCAL_MODEL_REGISTRY:-$repo_root/codex/models/local-models.json}}
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to build the Codex model catalog" >&2
+  exit 1
+fi
+if [[ ! -f $registry ]]; then
+  echo "local model registry not found: $registry" >&2
+  exit 1
+fi
+
+# Resolve the shared instructions relative to the registry so a copied or
+# alternate registry can remain self-contained.
+instructions_relative=$(jq -er '.instructions_file | select(type == "string" and length > 0)' "$registry") || {
+  echo "registry must define a non-empty instructions_file: $registry" >&2
+  exit 1
+}
+if [[ $instructions_relative = /* ]]; then
+  instructions_file=$instructions_relative
+else
+  registry_dir=$(cd "$(dirname "$registry")" && pwd)
+  instructions_file=$registry_dir/$instructions_relative
+fi
+if [[ ! -f $instructions_file ]]; then
+  echo "model instructions file not found: $instructions_file" >&2
+  exit 1
+fi
+
+# Fail with a concise error before Codex sees a malformed catalog. The model
+# objects deliberately stay close to Codex's observed schema so adding another
+# model is a data change rather than a launcher change.
+jq -e '
+  . as $registry |
+  ($registry.models | type == "array" and length > 0) and
+  all($registry.models[];
+    (.slug | type == "string" and length > 0) and
+    (.display_name | type == "string" and length > 0) and
+    (.priority | type == "number") and
+    (.shell_type | type == "string" and length > 0) and
+    (.visibility | type == "string" and length > 0) and
+    (.supported_in_api | type == "boolean") and
+    (.support_verbosity | type == "boolean") and
+    (.supported_reasoning_levels | type == "array" and length > 0) and
+    (all(.supported_reasoning_levels[];
+      (.effort | type == "string" and length > 0) and
+      (.description | type == "string" and length > 0))) and
+    (.truncation_policy.mode | type == "string" and length > 0) and
+    (.truncation_policy.limit | type == "number") and
+    (.experimental_supported_tools | type == "array")
+  ) and
+  (([$registry.models[].slug] | unique | length) == ($registry.models | length))
+' "$registry" >/dev/null || {
+  echo "invalid or duplicate model entry in registry: $registry" >&2
+  exit 1
+}
+
+# Codex requires base_instructions or an instructions template on every model.
+# Keep the prose in Markdown and inject it here so the registry remains readable.
+jq --rawfile base_instructions "$instructions_file" '
+  {models: [.models[] | . + {base_instructions: $base_instructions}]}
+' "$registry"

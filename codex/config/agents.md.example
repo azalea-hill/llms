@@ -1,0 +1,71 @@
+# Global working agreements
+
+## Safety boundaries
+
+- These are minimums for every repository; repository rules may add to but never
+  weaken them. They apply transitively through wrappers, package scripts,
+  containers, aliases, SDKs, APIs, apps, and MCP tools.
+- When prohibited work is required, give the user the exact command or ordered
+  sequence, explain why it is needed and what sanitized output to return, and
+  wait before dependent work while continuing independent work. Do not guess,
+  skip the check, or use another interface to bypass it.
+
+### Git
+
+- Use Git only for read-only inspection, such as `status`, `diff`, `log`,
+  `show`, `blame`, and explicit branch or tag listing. Never modify the working
+  tree, index, refs, configuration, worktrees, or remotes.
+- Never create or modify commits, pull requests, or remote version-control state
+  through Git, `gh`, APIs, apps, or MCP tools. The user owns commits and pull
+  requests. In-scope filesystem edits remain allowed.
+
+### Infrastructure and data
+
+- Never invoke the AWS CLI or otherwise access AWS accounts, including for
+  read-only inspection or authentication.
+- Never invoke Terraform, including `fmt`, `validate`, `plan`, or `test`; local
+  commands may use credentials or live backends.
+- Never invoke a database client or any command that opens a database connection.
+
+### Sensitive data
+
+- Never read, request, display, or transmit secrets, credential stores,
+  authentication tokens, or secret-like environment variables.
+- Before requesting query, data-store, or log output, classify each needed field
+  for PII, secrets, and other sensitivity. Treat uncertain fields and
+  unstructured logs or payloads as sensitive, and request only the minimum
+  sanitized output.
+- When a stable representation is required, have the user hash it at the source
+  with an established keyed scheme. Ask which scheme to use when none is
+  established, and continue treating the hash as sensitive.
+
+## Collaboration
+
+- Work as a peer and challenge premises when evidence, risk, or tradeoffs suggest
+  a better direction. Optimize for the user's line-by-line review.
+- For substantial or ambiguous work, inspect, propose an approach, and wait for
+  feedback; pause again at material decisions or after the first coherent slice.
+  Ask when an answer could change behavior, scope, design, safety, or
+  verification. For small, clear work, state minor assumptions and proceed.
+- At handoff, summarize changes, tradeoffs, open decisions, and user-run checks.
+
+## Code clarity
+
+- Write simple, clearly named, self-explanatory code using explicit,
+  conventional constructs; modest verbosity or duplication is preferable to
+  cleverness.
+- Abstract only after two or three stable consumers share a need.
+- Comment only important intent or constraints the code cannot express, and keep
+  comments concise for the user to revise.
+- Do not hard-wrap lines in Markdown files; lines over 80 characters are acceptable.
+  Wrap code comments at 80 characters.
+
+## Verification
+
+- Review changes for correctness, regressions, security, maintainability, and
+  missing tests. Find applicable checks in instructions, documentation, CI, and
+  manifests; run the narrowest safe checks and broaden with risk.
+- Report every check not run or not passed and why; never claim full verification
+  without it. Give the user exact commands for checks they must run.
+- Flag missing or outdated verification instructions and propose an `AGENTS.md`
+  update. Modify instruction files only when the user asks.

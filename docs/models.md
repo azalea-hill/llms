@@ -1,6 +1,6 @@
 # Model selection
 
-What to run and what it costs in memory. Setup and the launcher live in [README.md](README.md).
+What to run and what it costs in memory. Shared setup lives in the [repository README](../README.md), and Claude-specific launcher details live in the [Claude README](../claude/README.md).
 
 **`qwen/qwen3.6-35b-a3b` at MLX 4-bit as the main model, `google/gemma-4-26b-a4b-qat` as sonnet, `ibm/granite-4-micro` as haiku, about 54 GB resident, with the two MLX figures lazy ceilings.**
 
@@ -26,7 +26,7 @@ Quantization stores each weight in fewer bits than the 16-bit floats the model w
 
 Measured on the MoE: 4-bit is 20.4 GB and 71-74 tok/s; 8-bit is ~37 GB and 44-53 tok/s. 4-bit is the default here. 8-bit is worth considering once the machine has the memory to spare.
 
-Naming differs by format — MLX uses `4bit`/`8bit`, GGUF uses `q4_k_m`-style names. Switching variants has to be done in LM Studio's UI, not the CLI; see [README.md](README.md#loading-models-lms-load).
+Naming differs by format — MLX uses `4bit`/`8bit`, GGUF uses `q4_k_m`-style names. The [Claude loading examples](../claude/README.md#loading-different-models) show how to select a different downloaded model; use LM Studio's model manager when changing the downloaded quantization.
 
 ## Models tried
 
@@ -80,7 +80,7 @@ The MLX estimate does not move with context because MLX allocates KV lazily — 
 
 The 8-bit MoE was not estimated here. Doubling the weights and keeping the overhead puts the pair near 49 GB — extrapolation, not measurement.
 
-Disk is 22.6 GB for both models.
+Qwen and Granite occupy about 22.6 GB on disk. Adding Gemma brings the default three-model download to roughly 37.6 GB.
 
 ## macOS and the GPU memory ceiling
 
@@ -96,7 +96,7 @@ Do not raise it while you have a heavy working set — you are taking memory fro
 
 ## Recommendations by machine
 
-"Free" below is physical memory minus the resident model set — what is left for macOS and everything else you run. Rows without Gemma are the layout with `LMS_MEDIUM=$LMS_MAIN`, where the sonnet slot shares the main model and auto mode is off or accepted as slow; the three-model row is the default, and its ~54 GB is a ceiling — the two MLX models allocate KV lazily, so real usage starts near 40 GB and grows with the transcripts — but it leaves no room for Docker on 64 GB.
+"Free" below is physical memory minus the resident model set — what is left for macOS and everything else you run. Rows without Gemma describe a proposed layout where the Sonnet slot shares the main model and auto mode is off or accepted as slow. The current `lms-load` command always issues three model-load commands and does not automate or validate that layout. The three-model row is the default, and its ~54 GB is a ceiling — the two MLX models allocate KV lazily, so real usage starts near 40 GB and grows with the transcripts — but it leaves no room for Docker on 64 GB.
 
 | Machine    | Metal ceiling | Model set                                   | Resident | Free   |
 | ---------- | ------------- | ------------------------------------------- | -------- | ------ |
@@ -110,15 +110,15 @@ Do not raise it while you have a heavy working set — you are taking memory fro
 
 The 8-bit row on 64 GB needs the ceiling raised to ~56 GB and leaves little for anything else. Everything at 128 GB and above is from published figures, not measured here.
 
-**What the bigger models buy you.** More total parameters at the same active count is close to free speed-wise, so on a large machine the upgrade path is a wider MoE rather than a dense model or a higher quantization:
+**What the bigger models buy you.** More total parameters at the same active count is close to free speed-wise, so on a large machine the upgrade path is a wider MoE rather than a dense model or a higher quantization. The candidates below have not been tested in this repository; their sizes and availability can become stale, so confirm the linked model cards before buying hardware or downloading weights:
 
 - **[gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b)** — 117B total, 5.1B active, ships natively in MXFP4 at [~60 GB](https://aliteq.com/gpt-oss-120b-hardware-requirements-2026). The best quality-per-byte step up from the 35B, and only slightly more active weight per token, so it stays quick.
-- **Qwen3.5 122B-A10B** — ~81 GB at 4-bit, 262K context. 10B active means roughly a third the decode rate of a 3B-active model at the same bandwidth; better for planning than for watching it edit.
-- **Qwen3-Coder-Next 80B-A3B** — tuned for agentic coding, 3B active, 262K context, [>45 GB at 4-bit](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF). Fits a 64 GB machine with the ceiling raised, and is the most interesting untested candidate for this setup.
-- **DeepSeek-V4-Flash** — 284B total, ~13B active, 1M context, ~155 GB at 4-bit or ~90 GB at 2-bit. Measured around 35 tok/s on a 512 GB M3 Ultra. The 2-bit build fits 128 GB at reduced quality.
-- **GLM-5.3** is the strongest open-weight coding model as of late 2026 but needs roughly 418 GB, so it is out of reach below a 512 GB machine.
+- **[Qwen3.5 122B-A10B](https://huggingface.co/Qwen/Qwen3.5-122B-A10B)** — ~81 GB at 4-bit, 262K context. 10B active means roughly a third the decode rate of a 3B-active model at the same bandwidth; better for planning than for watching it edit.
+- **[Qwen3-Coder-Next 80B-A3B](https://huggingface.co/Qwen/Qwen3-Coder-Next)** — tuned for agentic coding, 3B active, 262K context, with community [4-bit GGUF builds](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF) above 45 GB. It fits a 64 GB machine with the ceiling raised and is an interesting untested candidate for this setup.
+- **[DeepSeek-V4-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash)** — 284B total, ~13B active, 1M context, ~155 GB at 4-bit or ~90 GB at 2-bit. A third-party local run measured around 35 tok/s on a 512 GB M3 Ultra; neither that result nor the memory estimates have been reproduced here. The 2-bit build may fit 128 GB at reduced quality.
+- **[GLM-5.3](https://huggingface.co/zai-org/GLM-5.3)** — a 753B model whose published weights alone are far beyond the smaller-machine configurations in this guide. Treat it as a 512 GB-class research candidate; it has not been tested here.
 
-On 128 GB and up you can keep two main models resident under separate `--identifier`s: a wide MoE for planning and the fast 35B for execution, which is the [workflow in README.md](README.md#workflow) without the reload between steps.
+On 128 GB and up, a possible future workflow is to keep two main models resident under separate `--identifier`s: a wide MoE for planning and the fast 35B for execution. The current loaders unload all resident models and do not configure this workflow.
 
 Below 48 GB this pair does not fit — the MoE alone is 26.6 GB against a ~24 GB ceiling on a 32 GB Mac. A smaller MoE is the realistic option there.
 
@@ -157,8 +157,8 @@ Unless you pass your own, the launcher adds:
 
 - `--effort medium` — as a flag rather than env var (the env var is a hard override that `/effort` cannot change mid-session).
 - `--permission-mode acceptEdits` — auto mode's classifier requests follow `ANTHROPIC_BASE_URL` to the sonnet slot, but its verdict quality against Sonnet's is unmeasured.
-- `--tools Bash,Read,Edit,Write,Glob,Grep,WebFetch,AskUserQuestion,TodoWrite,TaskCreate,TaskGet,TaskList,TaskUpdate,EnterPlanMode,ExitPlanMode` — file and shell tools, `WebFetch`, task list, and plan mode. No `Agent` (no subagents), no `WebSearch` (executed by Anthropic's API). `WebFetch` fetches the page itself and summarizes it with a haiku-tier call. The launcher's `--settings` disables Anthropic's hostname blocklist check (`skipWebFetchPreflight`) and adds a `permissions.ask` rule for `WebFetch` so every fetch prompts. This set is ~12 KB; the default built-in is 21 tools and ~46 KB.
-- `--strict-mcp-config` and `--settings '{"skipWebFetchPreflight":true,"permissions":{"ask":["WebFetch"]}}'`
+- `--tools Bash,Read,Edit,Write,Glob,Grep,WebFetch,AskUserQuestion,TodoWrite,TaskCreate,TaskGet,TaskList,TaskUpdate,EnterPlanMode,ExitPlanMode` — file and shell tools, `WebFetch`, task list, and plan mode. No `Agent` (no subagents), no `WebSearch` (executed by Anthropic's API). `WebFetch` fetches the page itself and summarizes it with a haiku-tier call. The launcher's `--settings` disables Anthropic's hostname blocklist check (`skipWebFetchPreflight`); whether a fetch prompts still depends on Claude Code's active permission mode and user or project rules. This set is ~12 KB; the default built-in is 21 tools and ~46 KB.
+- `--strict-mcp-config` and `--settings '{"skipWebFetchPreflight":true}'`
 - `--session-id` (skipped when resuming)
 
 ### Context and compaction

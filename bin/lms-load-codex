@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Accept the model as an argument first, then an environment override, then the
+# known-good default used by this repository.
+if (( $# > 1 )); then
+  echo "usage: lms-load-codex [model]" >&2
+  exit 2
+fi
+
+lms_bin=$(command -v lms 2>/dev/null || true)
+if [[ -z $lms_bin ]]; then
+  lms_bin="$HOME/.lmstudio/bin/lms"
+fi
+if [[ ! -x $lms_bin ]]; then
+  echo "lms CLI not found; install LM Studio's CLI or add ~/.lmstudio/bin to PATH" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to validate LM Studio's model list" >&2
+  exit 1
+fi
+
+main=${1:-${LMS_MAIN:-qwen/qwen3.6-35b-a3b}}
+if [[ -z $main ]]; then
+  echo "model identifier cannot be empty" >&2
+  exit 2
+fi
+
+echo "unloading currently loaded models" >&2
+"$lms_bin" unload --all
+
+echo "loading $main for Codex" >&2
+# Assigning the model key as its identifier keeps the name used by Codex and
+# the OpenAI-compatible API stable across LM Studio loads.
+"$lms_bin" load "$main" \
+  --identifier "$main" \
+  --context-length 200000 \
+  --gpu max \
+  --speculative-draft-mtp \
+  --yes
+
+# Loading successfully is not enough: verify the API-facing identifier that
+# LM Studio actually registered.
+loaded_json=$("$lms_bin" ps --json)
+if ! jq -e --arg target "$main" \
+  'type == "array" and any(.[]; .identifier? == $target)' \
+  >/dev/null <<<"$loaded_json"; then
+  echo "LM Studio did not report the expected loaded identifier: $main" >&2
+  exit 1
+fi
+
+echo "loaded and verified: $main" >&2

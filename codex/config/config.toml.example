@@ -1,0 +1,22 @@
+# Optional user-level defaults for ~/.codex/config.toml.
+# The codex-local launcher supplies the runtime settings for each invocation.
+# This file is only a starting point for using equivalent settings outside the
+# launcher. Generate a persistent catalog with bin/codex-model-catalog and set
+# model_catalog_json to its absolute path before using this configuration.
+
+model_provider = "lmstudio"
+oss_provider = "lmstudio"
+model = "qwen/qwen3.6-35b-a3b"
+# model_catalog_json = "/absolute/path/to/generated-local-model-catalog.json"
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+approvals_reviewer = "user"
+web_search = "disabled"
+
+[analytics]
+enabled = false
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 1

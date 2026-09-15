@@ -1,0 +1,90 @@
+# Commands the user always runs personally.
+
+prefix_rule(
+    pattern = ["aws"],
+    decision = "forbidden",
+    justification = "Do not access AWS directly. Provide the exact command for the user to run and request its output.",
+)
+
+prefix_rule(
+    pattern = ["terraform"],
+    decision = "forbidden",
+    justification = "Do not run Terraform commands. Provide the exact command for the user to run and request its output.",
+)
+
+prefix_rule(
+    pattern = ["psql"],
+    decision = "forbidden",
+    justification = "Do not initiate PostgreSQL connections. Provide the exact command or SQL for the user to run and request sanitized output.",
+)
+
+# Common Git operations that modify a working tree, index, refs, repository
+# metadata, worktrees, or remotes.
+prefix_rule(
+    pattern = [
+        "git",
+        [
+            "add",
+            "am",
+            "apply",
+            "checkout",
+            "cherry-pick",
+            "clean",
+            "clone",
+            "commit",
+            "fetch",
+            "gc",
+            "init",
+            "maintenance",
+            "merge",
+            "mv",
+            "pull",
+            "push",
+            "rebase",
+            "repack",
+            "reset",
+            "restore",
+            "revert",
+            "rm",
+            "stash",
+            "switch",
+        ],
+    ],
+    decision = "forbidden",
+    justification = "Use Git only for read-only inspection. Ask the user to perform mutating Git operations.",
+)
+
+prefix_rule(
+    pattern = [
+        "git",
+        "remote",
+        [
+            "add",
+            "remove",
+            "rename",
+            "set-head",
+            "set-branches",
+            "set-url",
+            "update",
+            "prune",
+        ],
+    ],
+    decision = "forbidden",
+    justification = "Ask the user to perform operations that modify Git remotes or refs.",
+)
+
+prefix_rule(
+    pattern = [
+        "git",
+        "worktree",
+        ["add", "move", "remove", "prune", "repair", "lock", "unlock"],
+    ],
+    decision = "forbidden",
+    justification = "Ask the user to perform operations that modify Git worktrees.",
+)
+
+prefix_rule(
+    pattern = ["git", "reflog", ["delete", "expire"]],
+    decision = "forbidden",
+    justification = "Ask the user to perform operations that modify Git reflogs.",
+)

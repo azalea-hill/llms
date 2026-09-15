@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+codex_bin=$(command -v codex 2>/dev/null || true)
+if [[ -z $codex_bin || ! -x $codex_bin ]]; then
+  echo "Codex CLI not found; install it or add it to PATH" >&2
+  exit 1
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl is required to check LM Studio" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to validate LM Studio's model list" >&2
+  exit 1
+fi
+
+# Follow PATH symlinks (for example ~/.local/bin/codex-local) before locating
+# the companion catalog builder in this repository's bin directory.
+launcher_path=${BASH_SOURCE[0]}
+while [[ -L $launcher_path ]]; do
+  launcher_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+  launcher_path=$(readlink "$launcher_path")
+  [[ $launcher_path = /* ]] || launcher_path=$launcher_dir/$launcher_path
+done
+script_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+catalog_builder=$script_dir/codex-model-catalog
+if [[ ! -x $catalog_builder ]]; then
+  echo "Codex model catalog builder is not executable: $catalog_builder" >&2
+  exit 1
+fi
+
+# The catalog must remain readable for the lifetime of Codex because model
+# selection can revisit it. Running Codex as a child lets this trap clean up the
+# generated file when the session ends.
+catalog_file=$(mktemp "${TMPDIR:-/tmp}/codex-local-model-catalog.XXXXXX")
+cleanup() {
+  [[ ! -e $catalog_file ]] || unlink "$catalog_file"
+}
+trap cleanup EXIT
+"$catalog_builder" > "$catalog_file"
+
+default_model=$(jq -er '.models[0].slug' "$catalog_file")
+main=${LMS_MAIN:-$default_model}
+has_model=0
+has_sandbox=0
+has_approval=0
+has_oss=0
+has_local_provider=0
+sets_permission_behavior=0
+
+args=("$@")
+index=0
+# Codex rejects duplicate model, sandbox, and approval flags. Detect explicit
+# user choices so the launcher supplies defaults only when they are absent.
+while (( index < ${#args[@]} )); do
+  arg=${args[$index]}
+  case "$arg" in
+    --)
+      # Everything after -- is prompt content, not launcher configuration.
+      break
+      ;;
+    -m|--model)
+      index=$((index + 1))
+      if (( index >= ${#args[@]} )); then
+        echo "$arg requires a model identifier" >&2
+        exit 2
+      fi
+      main=${args[$index]}
+      has_model=1
+      ;;
+    --model=*)
+      main=${arg#--model=}
+      has_model=1
+      ;;
+    -m?*)
+      main=${arg#-m}
+      has_model=1
+      ;;
+    -s|--sandbox)
+      has_sandbox=1
+      index=$((index + 1))
+      ;;
+    --sandbox=*|-s?*)
+      has_sandbox=1
+      ;;
+    -a|--ask-for-approval)
+      has_approval=1
+      index=$((index + 1))
+      ;;
+    --ask-for-approval=*|-a?*)
+      has_approval=1
+      ;;
+    --oss)
+      has_oss=1
+      ;;
+    --local-provider)
+      index=$((index + 1))
+      if (( index >= ${#args[@]} )); then
+        echo "--local-provider requires a value" >&2
+        exit 2
+      fi
+      if [[ ${args[$index]} != lmstudio ]]; then
+        echo "codex-local only supports --local-provider lmstudio" >&2
+        exit 2
+      fi
+      has_local_provider=1
+      ;;
+    --local-provider=*)
+      if [[ ${arg#--local-provider=} != lmstudio ]]; then
+        echo "codex-local only supports --local-provider lmstudio" >&2
+        exit 2
+      fi
+      has_local_provider=1
+      ;;
+    --approve-for-me|--dangerously-bypass-approvals-and-sandbox)
+      # These flags choose their own sandbox and approval behavior.
+      sets_permission_behavior=1
+      ;;
+  esac
+  index=$((index + 1))
+done
+
+if [[ -z $main ]]; then
+  echo "model identifier cannot be empty" >&2
+  exit 2
+fi
+if ! jq -e --arg target "$main" 'any(.models[]; .slug == $target)' \
+  >/dev/null < "$catalog_file"; then
+  echo "model is not defined in the local registry: $main" >&2
+  echo "registry: ${CODEX_LOCAL_MODEL_REGISTRY:-$script_dir/../codex/models/local-models.json}" >&2
+  exit 2
+fi
+# JSON string escaping is compatible with the TOML strings accepted by `-c`.
+catalog_toml=$(jq -cn --arg value "$catalog_file" '$value')
+
+upstream=http://localhost:1234
+# Fail before opening Codex if the local server or selected identifier is not
+# ready. This prevents an accidental fallback to a different model.
+if ! models_json=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$upstream/v1/models"); then
+  echo "LM Studio is not responding at $upstream; start its local server first" >&2
+  exit 1
+fi
+
+if ! jq -e --arg target "$main" \
+  'type == "object" and any(.data[]?; .id? == $target)' \
+  >/dev/null <<<"$models_json"; then
+  echo "model is not available from LM Studio: $main" >&2
+  printf 'load it with: lms-load-codex %q\n' "$main" >&2
+  exit 1
+fi
+
+codex_args=()
+(( has_oss )) || codex_args+=(--oss)
+(( has_local_provider )) || codex_args+=(--local-provider lmstudio)
+(( has_model )) || codex_args+=(--model "$main")
+if (( ! sets_permission_behavior )); then
+  (( has_sandbox )) || codex_args+=(--sandbox workspace-write)
+  (( has_approval )) || codex_args+=(--ask-for-approval on-request)
+fi
+# These are per-invocation defaults rather than project config because provider
+# selection is machine-local in Codex. Original arguments are appended last so
+# explicit `-c` values can override non-exclusive defaults.
+codex_args+=(
+  -c 'model_provider="lmstudio"'
+  -c "model_catalog_json=$catalog_toml"
+  -c 'approvals_reviewer="user"'
+  -c 'web_search="disabled"'
+  -c 'analytics.enabled=false'
+  -c 'features.apps=false'
+  -c 'features.plugins=false'
+  -c 'features.browser_use=false'
+  -c 'features.computer_use=false'
+  -c 'features.image_generation=false'
+  -c 'features.code_mode=false'
+  -c 'features.code_mode_only=false'
+  -c 'agents.enabled=true'
+  -c 'agents.max_concurrent_threads_per_session=1'
+)
+
+echo "codex-local [$upstream] model=$main catalog=$(jq '.models | length' "$catalog_file") defaults(web_search=disabled apps=disabled reviewer=user)" >&2
+"$codex_bin" "${codex_args[@]}" "$@"

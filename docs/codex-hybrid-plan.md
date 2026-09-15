@@ -1,98 +1,117 @@
 # Hybrid local Codex implementation plan
 
+This is the durable implementation record for the hybrid setup. Phases 1 and 2 are implemented; later phases are proposals. Use the [root README](../README.md) and [Codex README](../codex/README.md) as the operational source of truth for features that exist today.
+
 ## Goal
 
 Add a Codex setup alongside the existing Claude Code setup. Daily coding,
 tool use, and ordinary subagents should use `qwen/qwen3.6-35b-a3b` through LM
-Studio. OpenAI should be used only through explicit, isolated paths:
+Studio. OpenAI use should remain explicit so it is clear which provider handles
+a workflow:
 
 - `gpt-5.6-sol` for selected large-refactor planning sessions.
 - The Responses API web-search tool behind a narrow MCP server.
 
-The OpenAI web-search path must not receive the Codex session transcript or
-repository contents. The existing Claude behavior and commands must remain
-available.
+This is not intended to create a hard isolation boundary between local and
+OpenAI-backed Codex sessions. The narrow web-search path should still receive
+only its declared query or URL rather than the Codex transcript or repository
+contents. The existing Claude behavior and commands must remain available.
 
 ## Target layout
+
+The tree below includes planned Phase 3 and Phase 4 files, marked accordingly.
 
 ```text
 llms/
 ├── AGENTS.md
 ├── README.md
-├── TODO.md
 ├── .gitignore
-├── .claude/                     # Retained for sessions started at repo root
-│   └── settings.local.json
 ├── bin/                         # User-facing commands for both setups
 │   ├── claude-local
 │   ├── claude-local-sessions
 │   ├── lms-load
 │   ├── lms-session-stats
 │   ├── codex-local
-│   ├── codex-cloud-plan
+│   ├── codex-model-catalog
+│   ├── codex-export-models
+│   ├── codex-export-prompts
+│   ├── codex-cloud-plan             # Planned
 │   └── lms-load-codex
 ├── claude/
 │   ├── README.md
-│   ├── MODELS.md
-│   ├── TODO.md
-│   └── ollama/
-│       ├── modelfiles/
-│       └── ollama-session-stats
-└── codex/
+│   └── todo.md
+├── codex/
+│   ├── README.md
+│   ├── apply-patch.md
+│   ├── tools.md
+│   ├── models/
+│   │   ├── model-catalog.md
+│   │   ├── openai-models.json
+│   │   └── local-models.json
+│   ├── config/
+│   │   ├── config.toml.example
+│   │   ├── agents.md.example
+│   │   ├── default.rules.example
+│   │   └── cloud-plan.config.toml.example # Planned
+│   ├── prompts/
+│   │   ├── local-codex.md
+│   │   └── gpt-5.6-sol.md
+│   └── web-mcp/                     # Planned
+│       ├── package.json
+│       ├── package-lock.json
+│       ├── tsconfig.json
+│       ├── src/
+│       │   ├── index.ts
+│       │   ├── search-web.ts
+│       │   ├── fetch-url.ts
+│       │   ├── safe-fetch.ts
+│       │   ├── extract-content.ts
+│       │   └── privacy.ts
+│       └── test/
+│           ├── search-web.test.ts
+│           ├── fetch-url.test.ts
+│           ├── safe-fetch.test.ts
+│           └── privacy.test.ts
+├── docs/
+│   ├── codex-hybrid-plan.md
+│   ├── models.md
+│   └── todo.md
+└── ollama/                          # Archived Ollama-first implementation
     ├── README.md
-    ├── MODELS.md
-    ├── TODO.md
-    ├── config/
-    │   ├── config.toml.example
-    │   ├── cloud-plan.config.toml.example
-    │   └── rules/
-    │       └── default.rules
-    └── web-mcp/
-        ├── package.json
-        ├── package-lock.json
-        ├── tsconfig.json
-        ├── src/
-        │   ├── index.ts
-        │   ├── search-web.ts
-        │   ├── fetch-url.ts
-        │   ├── safe-fetch.ts
-        │   ├── extract-content.ts
-        │   └── privacy.ts
-        └── test/
-            ├── search-web.test.ts
-            ├── fetch-url.test.ts
-            ├── safe-fetch.test.ts
-            └── privacy.test.ts
+    ├── modelfiles/
+    └── ollama-session-stats
 ```
 
-The existing `~/.local/bin` links point into the top-level `bin/`. Keep the real
-implementations there so those links remain stable and all user-facing commands
-have one predictable home.
+Keep the real implementations in the top-level `bin/` so PATH entries and
+optional `~/.local/bin` links have one predictable target. New Codex links must
+be created explicitly; the repository does not install or overwrite them.
 
 ## Phase 1: Reorganize without changing Claude behavior
+
+Status: implemented.
 
 Move the current Claude-specific material under `claude/`:
 
 - Move the existing README to `claude/README.md`.
-- Move the model analysis to `claude/MODELS.md`.
-- Move Claude-specific backlog items to `claude/TODO.md`.
-- Keep the scripts in the top-level `bin/` and move the archived Ollama material
-  under `claude/` without changing behavior.
+- Move the model analysis to `docs/models.md` so both client guides can reference it.
+- Move Claude-specific backlog items to `claude/todo.md`.
+- Keep the scripts in the top-level `bin/` and the archived Ollama material in top-level `ollama/` without changing behavior.
 - Keep `.claude/settings.local.json` at the repository root so Claude sessions
   started there retain their current project-local behavior. Document why it
   remains outside the otherwise split Claude subtree.
 
-Rewrite the root README as a short guide to the Claude and Codex subtrees.
-Keep cross-cutting model research in the root TODO.
+Rewrite the root README as a shared setup guide and index to the Claude and Codex subtrees. Keep cross-cutting model research in `docs/todo.md`.
 
 Acceptance criteria:
 
-- Existing `~/.local/bin` symlinks remain valid.
+- Existing Claude `~/.local/bin` symlinks remain valid.
 - `claude-local`, `lms-load`, and the monitoring commands behave identically.
 - No Claude model IDs, flags, environment variables, or runtime behavior change
   as part of the move.
 
 ## Phase 2: Add the minimal local Codex path
+
+Status: implemented.
 
 Create `bin/lms-load-codex` that:
 
@@ -108,11 +127,10 @@ Create `bin/codex-local` that:
 2. Verifies that the requested model is available.
 3. Defaults `LMS_MAIN` to `qwen/qwen3.6-35b-a3b`.
 4. Runs Codex with `--oss --local-provider lmstudio`.
-5. Supplies explicit context, compaction, sandbox, approval, and web-search
-   settings.
+5. Supplies the generated model catalog plus explicit sandbox, approval, and web-search settings.
 6. Preserves command-line overrides where practical.
 
-The initial defaults should be:
+The following was the initial launcher design. The implemented custom catalog supersedes its global context, compaction, and reasoning settings so each registered local model can declare its own metadata:
 
 ```toml
 model_provider = "lmstudio"
@@ -144,7 +162,36 @@ project-local `.codex/config.toml`.
 Do not force `model_supports_reasoning_summaries` initially. Test LM Studio's
 Responses behavior first and disable reasoning summaries only if required.
 
-## Phase 3: Add the isolated cloud planner
+### Local model catalog follow-up
+
+Status: implemented for the initial Qwen entry, with a documented freeform-tool compatibility gap.
+
+Add a custom local model catalog before treating Phase 2 as the long-term
+launcher design. The catalog should:
+
+- Give every supported local model its own identifier, display name, context
+  window, effective-context percentage, reasoning levels, modalities, concise
+  base instructions, and direct tool-protocol metadata.
+- Use the unified shell protocol rather than code-mode-only orchestration. The registry currently declares the freeform `apply_patch` protocol, but the dedicated tool is not model-visible in the tested LM Studio/Qwen session. Local instructions therefore invoke Codex's injected patch executable through `exec_command`. An A/B check should confirm that the installed CLI still injects the helper without the catalog field, after which the unusable declaration can be removed; see [codex/apply-patch.md](../codex/apply-patch.md).
+- Allow multiple already-loaded LM Studio models to appear in `/model`.
+- Keep provider routing explicit without trying to enforce a security boundary
+  between local and OpenAI sessions.
+- Implement and verify the curated tool surface recorded in
+  [codex/tools.md](../codex/tools.md).
+
+The catalog now supplies Qwen's 200K context window and a 70 percent effective
+window, and the launcher no longer supplies global context, compaction, or
+reasoning overrides. There is no documented per-model absolute
+`model_auto_compact_token_limit` field in the catalog. Verify that Codex
+automatically compacts near the intended 140K effective window. If it does not,
+retain a session-wide launcher override or use separate profiles for models
+with materially different limits.
+
+A synthetic request capture contained nine tool entries, but the live Qwen session reported seven: `exec_command`, `write_stdin`, `request_user_input`, `view_image`, `get_goal`, `create_goal`, and `update_goal`. Dedicated `apply_patch` and the multi-agent namespace were absent. Patch create, update, and delete behavior is verified through the injected shell helper; the multi-agent discrepancy remains open.
+
+## Phase 3: Add the explicit cloud planner
+
+Status: not started.
 
 Create `bin/codex-cloud-plan` and
 `codex/config/cloud-plan.config.toml.example`.
@@ -166,15 +213,14 @@ Support two documented workflows:
 2. Run against a temporary planning packet containing only selected files and
    a problem statement.
 
-Privacy invariant:
-
-> Never switch an existing local thread to the cloud profile. Never resume or
-> fork a local thread using the cloud planner.
+The separate-thread default is an operational guardrail against accidentally carrying a local transcript into a cloud planning request, not a hard privacy boundary. An operator may intentionally run the planner against a repository or selected files after accepting that those inputs will be sent to OpenAI.
 
 The output should be Markdown suitable for saving as a plan artifact that a
 local Codex session can implement.
 
 ## Phase 4: Implement the web MCP
+
+Status: not started.
 
 Use TypeScript with the official MCP SDK and OpenAI SDK. Expose only two tools:
 
@@ -242,6 +288,8 @@ reviewing real tool arguments and egress behavior.
 
 ## Phase 5: Add deterministic command rules
 
+Status: not started. The current example snapshot is `codex/config/default.rules.example`; it is not installed automatically.
+
 Create a documented rules example rather than installing it automatically.
 It should:
 
@@ -258,9 +306,10 @@ inside the OS-enforced sandbox.
 
 ## Phase 6: Documentation and operational hardening
 
-`codex/README.md` should cover:
+Status: in progress. Shared setup and the implemented local Codex path are documented; the cloud planner and web MCP sections remain pending until those features exist.
 
-- Installation and LM Studio startup.
+The root README should cover installation, shared LM Studio setup, model download, server startup, and command discovery. `codex/README.md` should cover:
+
 - Loading the one-model Codex set.
 - Local daily use.
 - Cloud planning and privacy boundaries.
@@ -271,8 +320,7 @@ inside the OS-enforced sandbox.
 - Troubleshooting Responses tool calls.
 - Inspecting LM Studio logs and Codex JSON output.
 
-`codex/MODELS.md` should record measured behavior rather than repeat general
-model descriptions:
+Add measured Codex behavior to `docs/models.md`, or to a dedicated benchmark document if it becomes large, rather than repeating general model descriptions:
 
 - First-turn prefill.
 - Decode rate.
@@ -299,36 +347,26 @@ repository.
 
 ## Verification required during implementation
 
-Record the final, exact commands in the closest applicable `AGENTS.md`. The
-expected checks are:
+The root `AGENTS.md` is the source of truth for current checks. At the time of this plan, they are:
 
 ```sh
-zsh -n \
-  bin/claude-local \
-  bin/lms-load \
-  bin/codex-local \
-  bin/codex-cloud-plan \
-  bin/lms-load-codex
-
-python3 -m py_compile \
-  bin/claude-local-sessions \
-  bin/lms-session-stats \
-  claude/ollama/ollama-session-stats
-
-npm --prefix codex/web-mcp ci
-npm --prefix codex/web-mcp run lint
-npm --prefix codex/web-mcp run typecheck
-npm --prefix codex/web-mcp test
-npm --prefix codex/web-mcp run build
+zsh -n bin/claude-local bin/lms-load
+bash -n bin/codex-local bin/codex-model-catalog bin/codex-export-models bin/codex-export-prompts bin/lms-load-codex
+jq empty codex/models/local-models.json
+bin/codex-model-catalog | jq empty
+PYTHONPYCACHEPREFIX=/private/tmp/llms-pycache python3 -m py_compile bin/claude-local-sessions bin/lms-session-stats ollama/ollama-session-stats
+for script in bin/* ollama/ollama-session-stats; do test -x "$script" || exit 1; done
 ```
+
+When Phase 4 exists, add its package install, lint, type-check, unit-test, and build commands to `AGENTS.md`. Its unit tests must mock LM Studio and OpenAI integrations.
 
 Manual, non-database smoke tests:
 
 ```sh
 claude-local --version
 codex --version
-codex execpolicy check --pretty --rules codex/config/rules/default.rules -- git status
-codex execpolicy check --pretty --rules codex/config/rules/default.rules -- git commit -m test
+codex-model-catalog | jq empty
+lms server status
 ```
 
 LM Studio and OpenAI integration tests must be opt-in because they require
@@ -338,11 +376,10 @@ approval.
 
 ## Recommended implementation order
 
-1. Reorganize the Claude files while keeping all commands in the top-level `bin/`.
-2. Add the one-model Codex loader and local launcher.
-3. Add local and cloud-planner configuration examples.
-4. Smoke-test Qwen's Responses tool calling, patching, compaction, and
-   subagents.
+1. Done: reorganize the Claude files while keeping all commands in the top-level `bin/`.
+2. Done: add the one-model Codex loader, local launcher, model registry, and generated catalog.
+3. Add the cloud-planner launcher and configuration example.
+4. Finish smoke-testing Qwen's Responses tool calling, patching, compaction, and subagents.
 5. Implement and test `fetch_url`.
 6. Implement and test OpenAI-backed `search_web`.
 7. Add and test deterministic Git, database, and network rules.

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# > 1 )); then
+  echo "usage: codex-export-models [output-file]" >&2
+  exit 2
+fi
+if ! command -v codex >/dev/null 2>&1; then
+  echo "Codex CLI not found; install it or add it to PATH" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to export bundled models" >&2
+  exit 1
+fi
+
+# Follow a PATH symlink before resolving the repository-relative default path.
+launcher_path=${BASH_SOURCE[0]}
+while [[ -L $launcher_path ]]; do
+  launcher_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+  launcher_path=$(readlink "$launcher_path")
+  [[ $launcher_path = /* ]] || launcher_path=$launcher_dir/$launcher_path
+done
+script_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+output_file=${1:-$repo_root/codex/models/openai-models.json}
+output_dir=$(cd -P "$(dirname "$output_file")" && pwd) || {
+  echo "output directory not found: $(dirname "$output_file")" >&2
+  exit 1
+}
+output_file=$output_dir/$(basename "$output_file")
+
+temporary_file=$(mktemp "$output_dir/.openai-models.XXXXXX")
+cleanup() {
+  [[ ! -e $temporary_file ]] || unlink "$temporary_file"
+}
+trap cleanup EXIT
+
+# Replace the prior snapshot so repeated exports remain one valid JSON document.
+codex debug models --bundled | jq '.' > "$temporary_file"
+jq -e '.models | type == "array" and length > 0' "$temporary_file" >/dev/null
+chmod 0644 "$temporary_file"
+mv "$temporary_file" "$output_file"
+
+echo "wrote $output_file" >&2

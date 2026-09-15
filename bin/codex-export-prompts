@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v codex >/dev/null 2>&1; then
+  echo "Codex CLI not found; install it or add it to PATH" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to extract bundled model prompts" >&2
+  exit 1
+fi
+
+# Follow a PATH symlink before resolving the repository-relative output path.
+launcher_path=${BASH_SOURCE[0]}
+while [[ -L $launcher_path ]]; do
+  launcher_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+  launcher_path=$(readlink "$launcher_path")
+  [[ $launcher_path = /* ]] || launcher_path=$launcher_dir/$launcher_path
+done
+script_dir=$(cd -P "$(dirname "$launcher_path")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+prompts_dir=$repo_root/codex/prompts
+
+if [[ ! -d $prompts_dir ]]; then
+  echo "prompts directory not found: $prompts_dir" >&2
+  exit 1
+fi
+
+catalog_file=$(mktemp "${TMPDIR:-/tmp}/codex-bundled-models.XXXXXX")
+prompt_file=
+cleanup() {
+  [[ ! -e $catalog_file ]] || unlink "$catalog_file"
+  [[ -z $prompt_file || ! -e $prompt_file ]] || unlink "$prompt_file"
+}
+trap cleanup EXIT
+
+codex debug models --bundled | jq '.' > "$catalog_file"
+
+extract_prompt() {
+  local model_slug=$1
+  local output_file=$prompts_dir/$model_slug.md
+  local model_count
+
+  model_count=$(jq --arg model_slug "$model_slug" \
+    '[.models[] | select(.slug == $model_slug)] | length' "$catalog_file")
+  if [[ $model_count != 1 ]]; then
+    echo "expected exactly one bundled model named $model_slug; found $model_count" >&2
+    exit 1
+  fi
+
+  prompt_file=$(mktemp "$prompts_dir/.$model_slug.XXXXXX")
+  if ! jq -er --arg model_slug "$model_slug" \
+    '.models[] | select(.slug == $model_slug) | .base_instructions | select(type == "string" and length > 0)' \
+    "$catalog_file" > "$prompt_file"; then
+    echo "bundled model has no non-empty base_instructions: $model_slug" >&2
+    exit 1
+  fi
+
+  chmod 0644 "$prompt_file"
+  mv "$prompt_file" "$output_file"
+  prompt_file=
+  echo "wrote $output_file" >&2
+}
+
+extract_prompt gpt-5.6-sol
